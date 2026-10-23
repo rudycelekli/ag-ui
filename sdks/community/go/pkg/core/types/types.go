@@ -385,17 +385,34 @@ type RunAgentInput struct {
 	// ParentRunID is an optional identifier of the run that spawned this run.
 	ParentRunID *string `json:"parentRunId,omitempty"`
 	// State is the arbitrary state payload.
-	State any `json:"state"`
+	State any `json:"state,omitempty"`
 	// Messages is the message history for the run.
 	Messages []Message `json:"messages"`
 	// Tools is the list of tools available to the agent.
-	Tools []Tool `json:"tools"`
+	Tools []Tool `json:"tools,omitempty"`
 	// Context is the list of context entries for the agent.
-	Context []Context `json:"context"`
+	Context []Context `json:"context,omitempty"`
 	// ForwardedProps is an arbitrary bag of additional properties forwarded to the agent.
-	ForwardedProps any `json:"forwardedProps"`
+	ForwardedProps any `json:"forwardedProps,omitempty"`
 	// Resume is an optional list of interrupt responses for resuming a paused run.
 	Resume []ResumeEntry `json:"resume,omitempty"`
+}
+
+// MarshalJSON implements json.Marshaler.
+//
+// The optional fields are left out when unset rather than written as null:
+// the protocol types tools and context as arrays and state and forwardedProps
+// as non-null values, and the TypeScript RunAgentInputSchema rejects a null in
+// any of them. messages is required, so a nil slice is written as [].
+func (r RunAgentInput) MarshalJSON() ([]byte, error) {
+	// Alias the type so marshalling does not recurse into this method.
+	type input RunAgentInput
+
+	if r.Messages == nil {
+		r.Messages = []Message{}
+	}
+
+	return json.Marshal(input(r))
 }
 
 // UnmarshalJSON implements json.Unmarshaler and supports snake_case compatibility.
