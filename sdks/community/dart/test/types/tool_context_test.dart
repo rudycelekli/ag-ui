@@ -376,4 +376,44 @@ void main() {
       expect(cleared.result, isNull);
     });
   });
+
+  // The protocol requires only threadId, runId and messages on
+  // RunAgentInput; tools and context are optional. Requiring them made a
+  // spec-valid RUN_STARTED whose input omits them (spec fixture
+  // RunStartedEvent/valid/with-input.json) fail to decode, which ends the
+  // client's event stream.
+  group('RunAgentInput optional lists', () {
+    test('absent tools and context decode as empty lists', () {
+      final input = RunAgentInput.fromJson({
+        'threadId': 't1',
+        'runId': 'r1',
+        'messages': <dynamic>[],
+      });
+      expect(input.tools, isEmpty);
+      expect(input.context, isEmpty);
+    });
+
+    test('RUN_STARTED carrying a minimal input decodes', () {
+      final event = BaseEvent.fromJson({
+        'type': 'RUN_STARTED',
+        'threadId': 't1',
+        'runId': 'r1',
+        'input': {'threadId': 't1', 'runId': 'r1', 'messages': <dynamic>[]},
+      });
+      expect(event, isA<RunStartedEvent>());
+      expect((event as RunStartedEvent).input!.tools, isEmpty);
+    });
+
+    test('a present but malformed tools list is still rejected', () {
+      expect(
+        () => RunAgentInput.fromJson({
+          'threadId': 't1',
+          'runId': 'r1',
+          'messages': <dynamic>[],
+          'tools': 'not-a-list',
+        }),
+        throwsA(isA<AGUIValidationError>()),
+      );
+    });
+  });
 }

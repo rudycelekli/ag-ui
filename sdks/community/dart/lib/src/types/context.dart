@@ -118,10 +118,12 @@ class RunAgentInput extends AGUIModel {
         return out;
       }(),
       tools: () {
-        final raw = JsonDecoder.requireListField<Map<String, dynamic>>(
-          json,
-          'tools',
-        );
+        // Optional in the protocol: an absent list is an empty one.
+        final raw = JsonDecoder.optionalListField<Map<String, dynamic>>(
+              json,
+              'tools',
+            ) ??
+            const <Map<String, dynamic>>[];
         final out = <Tool>[];
         for (var i = 0; i < raw.length; i++) {
           try {
@@ -146,10 +148,12 @@ class RunAgentInput extends AGUIModel {
         return out;
       }(),
       context: () {
-        final raw = JsonDecoder.requireListField<Map<String, dynamic>>(
-          json,
-          'context',
-        );
+        // Optional in the protocol: an absent list is an empty one.
+        final raw = JsonDecoder.optionalListField<Map<String, dynamic>>(
+              json,
+              'context',
+            ) ??
+            const <Map<String, dynamic>>[];
         final out = <Context>[];
         for (var i = 0; i < raw.length; i++) {
           try {
