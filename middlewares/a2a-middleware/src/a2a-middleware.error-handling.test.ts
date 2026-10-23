@@ -240,6 +240,63 @@ describe("delegated call arguments (PNI-549)", () => {
   });
 });
 
+describe("the run that continues after a delegation", () => {
+  // After the A2A replies arrive the middleware closes the run with RUN_FINISHED
+  // and starts the orchestrator again, so the consumer sees two runs on one
+  // stream. The second was started with the first run's input unchanged, runId
+  // included, and the spec says a runId MUST NOT be reused for another run on
+  // the same thread.
+  class TwoRunOrchestrator extends AbstractAgent {
+    inputs: RunAgentInput[] = [];
+    run(input: RunAgentInput): Observable<BaseEvent> {
+      this.inputs.push({ ...input });
+      const first = this.inputs.length === 1;
+      return new Observable<BaseEvent>((observer) => {
+        observer.next({ type: EventType.RUN_STARTED, threadId: input.threadId, runId: input.runId } as BaseEvent);
+        if (first) {
+          observer.next({ type: EventType.TOOL_CALL_START, toolCallId: TOOL_CALL_ID, toolCallName: TOOL_NAME } as BaseEvent);
+          observer.next({
+            type: EventType.TOOL_CALL_ARGS,
+            toolCallId: TOOL_CALL_ID,
+            delta: JSON.stringify({ agentName: "travel", task: "book it" }),
+          } as BaseEvent);
+          observer.next({ type: EventType.TOOL_CALL_END, toolCallId: TOOL_CALL_ID } as BaseEvent);
+        }
+        observer.next({ type: EventType.RUN_FINISHED, threadId: input.threadId, runId: input.runId } as BaseEvent);
+        observer.complete();
+      });
+    }
+    clone(): TwoRunOrchestrator {
+      return new TwoRunOrchestrator();
+    }
+  }
+
+  it("gives the continuation run its own runId", async () => {
+    const orchestrationAgent = new TwoRunOrchestrator();
+    const agent = new A2AMiddlewareAgent({ agentUrls: [], orchestrationAgent });
+    vi.spyOn(agent as any, "sendMessageToA2AAgent").mockResolvedValue("booked");
+
+    const result = await collect(agent);
+
+    expect(result.completed).toBe(true);
+    expect(orchestrationAgent.inputs).toHaveLength(2);
+    const [firstRun, secondRun] = orchestrationAgent.inputs;
+    expect(firstRun.runId).toBe("r1");
+    expect(secondRun.runId).not.toBe(firstRun.runId);
+    expect(secondRun.threadId).toBe(firstRun.threadId);
+
+    // Each run the consumer sees opens and closes under one id, and no id repeats.
+    const started = result.events
+      .filter((e) => e.type === EventType.RUN_STARTED)
+      .map((e) => (e as any).runId);
+    const finished = result.events
+      .filter((e) => e.type === EventType.RUN_FINISHED)
+      .map((e) => (e as any).runId);
+    expect(started).toEqual([firstRun.runId, secondRun.runId]);
+    expect(finished).toEqual([firstRun.runId, secondRun.runId]);
+  });
+});
+
 describe("debug logging", () => {
   // agent.debug is a resolved config object, so a bare `if (this.debug)` was
   // always true and every delegated task and reply was logged.

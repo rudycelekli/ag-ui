@@ -295,9 +295,12 @@ export class A2AMiddlewareAgent extends AbstractAgent {
                     input.messages.push(msg);
                   });
 
+                  // The run above has closed, so the continuation is a new run
+                  // on the same thread and needs its own runId: one may not be
+                  // reused for another run on the thread.
                   this.triggerNewRun(
                     observer,
-                    input,
+                    { ...input, runId: randomUUID() },
                     pendingA2ACalls,
                     pendingTextMessages,
                   );
