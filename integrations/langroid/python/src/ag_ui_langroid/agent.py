@@ -335,8 +335,16 @@ class LangroidAgent:
                     
                     tool_name = tool_call_message.request
                     tool_args = {}
+                    # A real Langroid ToolMessage also carries its framework
+                    # ``id`` field (the LLM tool-call id), which is not a tool
+                    # argument. The ad-hoc call objects built above set only the
+                    # parsed arguments, so an ``id`` there is a real argument.
+                    from langroid.agent.tool_message import ToolMessage as LangroidToolMessage
+                    reserved_fields = ["request", "purpose"]
+                    if isinstance(tool_call_message, LangroidToolMessage):
+                        reserved_fields.append("id")
                     for field_name, field_value in tool_call_message.__dict__.items():
-                        if field_name not in ["request", "purpose"]:
+                        if field_name not in reserved_fields:
                             tool_args[field_name] = field_value
                     
                     tool_already_executed = False

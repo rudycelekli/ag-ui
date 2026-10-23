@@ -334,6 +334,31 @@ class TestLangroidAgentFrontendTools(unittest.TestCase):
         args = json.loads(args_event.delta)
         self.assertEqual(args["color"], "blue")
 
+    def test_frontend_tool_args_from_a_real_tool_message(self):
+        """A real Langroid ToolMessage carries a framework ``id`` field (the
+        LLM tool-call id, "" when unset) next to ``request`` and ``purpose``.
+        Guards against forwarding it as a tool argument: the frontend tool got
+        an ``id`` parameter it never declared."""
+        from langroid.agent.tool_message import ToolMessage as LangroidToolMessage
+
+        class ChangeBackground(LangroidToolMessage):
+            request: str = "change_background"
+            purpose: str = "Change the chat background color"
+            color: str
+
+        fake = FakeLangroidAgent(ChangeBackground(color="blue"))
+        tools = [Tool(name="change_background", description="Change bg", parameters={})]
+
+        agent = LangroidAgent(agent=fake, name="test")
+        input_data = _make_input(
+            messages=[_make_user_message("Change background to blue")],
+            tools=tools,
+        )
+        events = _collect_events(agent, input_data)
+
+        args_event = next(e for e in events if e.type == EventType.TOOL_CALL_ARGS)
+        self.assertEqual(json.loads(args_event.delta), {"color": "blue"})
+
 
 class TestLangroidAgentStateContextBuilder(unittest.TestCase):
     """Test state context builder integration."""
