@@ -420,6 +420,50 @@ class TestLangroidAgentPendingToolResult(unittest.TestCase):
 
         self.assertEqual(tracking_agent.last_input, "")
 
+    def test_frontend_tool_answers_every_parallel_call_in_history(self):
+        """Guards the thread after a parallel tool call: the synthetic tool
+        result was added only for the first call of the assistant message, so
+        the others stayed unanswered and the next OpenAI request on the thread
+        was rejected for tool_call_ids without a response."""
+        from langroid.language_models.base import (
+            LLMFunctionCall,
+            LLMMessage,
+            OpenAIToolCall,
+            Role,
+        )
+
+        fake = FakeLangroidAgent(
+            FakeToolResponse(request="change_background", color="blue")
+        )
+        fake.message_history = [
+            LLMMessage(
+                role=Role.ASSISTANT,
+                content="",
+                tool_calls=[
+                    OpenAIToolCall(
+                        id="call_a",
+                        function=LLMFunctionCall(name="change_background", arguments={"color": "blue"}),
+                    ),
+                    OpenAIToolCall(
+                        id="call_b",
+                        function=LLMFunctionCall(name="change_background", arguments={"color": "red"}),
+                    ),
+                ],
+            )
+        ]
+        tools = [Tool(name="change_background", description="Change bg", parameters={})]
+
+        agent = LangroidAgent(agent=fake, name="test")
+        _collect_events(
+            agent,
+            _make_input(messages=[_make_user_message("Make it blue and red")], tools=tools),
+        )
+
+        answered = [
+            m.tool_call_id for m in fake.message_history if getattr(m, "role", None) == Role.TOOL
+        ]
+        self.assertEqual(answered, ["call_a", "call_b"])
+
 
 class TestLangroidAgentBackendToolDemoCoupling(unittest.TestCase):
     """Characterization tests pinning the hardcoded Dojo-demo backend tool

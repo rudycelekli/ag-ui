@@ -1026,15 +1026,20 @@ class LangroidAgent:
             has_tool_calls = (hasattr(msg, "tool_calls") and msg.tool_calls) or (hasattr(msg, "oai_tool_calls") and msg.oai_tool_calls)
             if has_tool_calls:
                 tool_calls_list = msg.tool_calls if (hasattr(msg, "tool_calls") and msg.tool_calls) else msg.oai_tool_calls
-                tc_id = getattr(tool_calls_list[0], "id", "") if tool_calls_list else ""
+                # Answer every call of the message, not just the first: a
+                # parallel tool call leaves its siblings pending too, and the
+                # OpenAI API rejects the next request on the thread while any
+                # tool_call_id in the history has no result.
+                tc_ids = [getattr(tc, "id", "") for tc in tool_calls_list]
                 try:
                     from langroid.language_models.base import LLMMessage, Role
-                    history.append(LLMMessage(
-                        role=Role.TOOL,
-                        content="Done",
-                        tool_call_id=tc_id,
-                    ))
-                    logger.info(f"Patched history: added synthetic tool result for {tool_name} (call_id={tc_id})")
+                    for tc_id in tc_ids:
+                        history.append(LLMMessage(
+                            role=Role.TOOL,
+                            content="Done",
+                            tool_call_id=tc_id,
+                        ))
+                    logger.info(f"Patched history: added synthetic tool results for {tool_name} (call_ids={tc_ids})")
                     # Also clear Langroid's pending tool call tracking.
                     # Langroid uses agent.oai_tool_calls to decide whether
                     # the next llm_response() input should be converted to
@@ -1044,9 +1049,9 @@ class LangroidAgent:
                     if hasattr(agent, "oai_tool_calls"):
                         agent.oai_tool_calls = [
                             t for t in agent.oai_tool_calls
-                            if getattr(t, "id", None) != tc_id
+                            if getattr(t, "id", None) not in tc_ids
                         ]
-                        logger.info(f"Cleared pending oai_tool_calls for {tc_id}, remaining: {len(agent.oai_tool_calls)}")
+                        logger.info(f"Cleared pending oai_tool_calls for {tc_ids}, remaining: {len(agent.oai_tool_calls)}")
                 except Exception as e:
                     logger.warning(f"Could not add synthetic tool result: {e}")
                 break
