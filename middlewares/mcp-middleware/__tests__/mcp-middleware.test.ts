@@ -633,6 +633,28 @@ describe("MCPMiddleware — RUN_FINISHED ordering", () => {
     expect(idxFinish).toBeGreaterThan(idxResult);
   });
 
+  // The consumer saw this run start as the input's runId. Each continuation
+  // runs downstream under a fresh id, and it is the continuation's RUN_FINISHED
+  // that closes the merged run, so it has to close the run that was opened:
+  // before, it named an id whose RUN_STARTED the consumer never received.
+  it("closes the merged run under the runId it opened with", async () => {
+    mockListTools.mockResolvedValue({ tools: [{ name: "weather", inputSchema: {} }] });
+    const next = new BatchMockAgent([
+      [runStarted("r"), ...toolCall("c1", "mcp__s__weather"), runFinished("r")],
+      [runStarted("r2"), ...textMessage("m2", "done"), runFinished("r2")],
+    ]);
+    const received = await collectEvents(
+      new MCPMiddleware([weatherServer()]).run(createRunAgentInput({ runId: "r" }), next),
+    );
+
+    const runIds = received
+      .filter((e) => e.type === EventType.RUN_STARTED || e.type === EventType.RUN_FINISHED)
+      .map((e) => (e as { runId?: string }).runId);
+    expect(runIds).toEqual(["r", "r"]);
+    // The continuation itself still ran downstream under its own id.
+    expect(next.runCalls[1].runId).not.toBe("r");
+  });
+
   it("emits TOOL_CALL_RESULTs before RUN_FINISHED in scenario 2 (stop)", async () => {
     mockListTools.mockResolvedValue({ tools: [{ name: "weather", inputSchema: {} }] });
     const next = new BatchMockAgent([

@@ -285,8 +285,13 @@ export class MCPMiddleware extends Middleware {
               return;
             }
             if (event.type === EventType.RUN_FINISHED) {
-              // Always buffer; only flushed when the loop truly stops.
-              bufferedRunFinished = event;
+              // Always buffer; only flushed when the loop truly stops. A
+              // continuation runs downstream under its own runId, but its
+              // RUN_FINISHED closes the run the consumer saw start, so it
+              // carries that run's id.
+              bufferedRunFinished = isContinuation
+                ? ({ ...event, runId: input.runId } as BaseEvent)
+                : event;
               return;
             }
             if (event.type === EventType.RUN_STARTED && isContinuation) {
