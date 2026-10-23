@@ -12,6 +12,8 @@ import {
   RunStartedEvent,
   RunFinishedEvent,
   PROTOCOL_VERSION,
+  aggregateTokenUsage,
+  type TokenUsage,
 } from "@ag-ui/client";
 import { Observable, Subscription, from, switchMap } from "rxjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -659,6 +661,18 @@ export class MCPAppsMiddleware extends Middleware {
                   continuation.next.messages.length,
                   ...messages,
                 );
+                // The held RUN_FINISHED is swallowed below, so its usage has to
+                // reach the terminal event the consumer does receive.
+                const heldUsage =
+                  (heldRunFinished.event as RunFinishedEvent).usage ?? [];
+                const withHeldUsage = (event: BaseEvent): BaseEvent => {
+                  if (heldUsage.length === 0) return event;
+                  const own = (event as { usage?: TokenUsage[] }).usage ?? [];
+                  return {
+                    ...event,
+                    usage: aggregateTokenUsage([...heldUsage, ...own]),
+                  } as BaseEvent;
+                };
                 const nextInput = {
                   ...continuation.input,
                   runId: randomUUID(),
@@ -680,8 +694,13 @@ export class MCPAppsMiddleware extends Middleware {
                       if (event.type !== EventType.RUN_STARTED) {
                         subscriber.next(
                           event.type === EventType.RUN_FINISHED
-                            ? { ...event, runId: continuation.input.runId }
-                            : event,
+                            ? withHeldUsage({
+                                ...event,
+                                runId: continuation.input.runId,
+                              })
+                            : event.type === EventType.RUN_ERROR
+                              ? withHeldUsage(event)
+                              : event,
                         );
                       }
                     },

@@ -804,6 +804,89 @@ describe("MCPAppsMiddleware", () => {
       expect(agent.runCalls).toHaveLength(1);
     });
 
+    // A continuation is a second model run the consumer never sees open: its
+    // RUN_STARTED is hidden and the first run's RUN_FINISHED is swallowed, so the
+    // one terminal event the consumer receives must carry both runs' usage.
+    // Before, it carried only the continuation's and the first call's tokens
+    // were never reported.
+    it("reports the usage of every continued run on the terminal event", async () => {
+      mockListTools.mockResolvedValue({
+        tools: [createMCPToolWithoutUI("read_me")],
+      });
+      mockCallTool.mockResolvedValue(
+        createMCPToolCallResult([{ type: "text", text: "guide" }]),
+      );
+      const usage = (inputTokens: number, outputTokens: number) => [
+        { provider: "openai", model: "gpt-4o", inputTokens, outputTokens },
+      ];
+      const agent = new SequenceAgent((input, turn) => {
+        if (turn === 0) {
+          const events = toolTurn(input, "read_me", "guide");
+          events[events.length - 1] = {
+            ...createRunFinishedEvent(input.runId, input.threadId),
+            usage: usage(100, 10),
+          } as BaseEvent;
+          return events;
+        }
+        return [
+          createRunStartedEvent(input.runId, input.threadId),
+          {
+            ...createRunFinishedEvent(input.runId, input.threadId),
+            usage: usage(150, 20),
+          } as BaseEvent,
+        ];
+      });
+      const events = await collectEvents(
+        new MCPAppsMiddleware({ mcpServers: [httpServerConfig] }).run(
+          createRunAgentInput(),
+          agent,
+        ),
+      );
+      expect(agent.runCalls).toHaveLength(2);
+      const finished = events.filter((e) => e.type === EventType.RUN_FINISHED);
+      expect(finished).toHaveLength(1);
+      expect((finished[0] as any).usage).toEqual(usage(250, 30));
+    });
+
+    it("carries the continued runs' usage onto a continuation's RUN_ERROR", async () => {
+      mockListTools.mockResolvedValue({
+        tools: [createMCPToolWithoutUI("read_me")],
+      });
+      mockCallTool.mockResolvedValue(
+        createMCPToolCallResult([{ type: "text", text: "guide" }]),
+      );
+      const usage = (inputTokens: number, outputTokens: number) => [
+        { provider: "openai", model: "gpt-4o", inputTokens, outputTokens },
+      ];
+      const agent = new SequenceAgent((input, turn) => {
+        if (turn === 0) {
+          const events = toolTurn(input, "read_me", "guide");
+          events[events.length - 1] = {
+            ...createRunFinishedEvent(input.runId, input.threadId),
+            usage: usage(100, 10),
+          } as BaseEvent;
+          return events;
+        }
+        return [
+          createRunStartedEvent(input.runId, input.threadId),
+          {
+            type: EventType.RUN_ERROR,
+            message: "boom",
+            usage: usage(40, 0),
+          } as BaseEvent,
+        ];
+      });
+      const events = await collectEvents(
+        new MCPAppsMiddleware({ mcpServers: [httpServerConfig] }).run(
+          createRunAgentInput(),
+          agent,
+        ),
+      );
+      const errors = events.filter((e) => e.type === EventType.RUN_ERROR);
+      expect(errors).toHaveLength(1);
+      expect((errors[0] as any).usage).toEqual(usage(140, 10));
+    });
+
     it("bounds repeated supporting-tool continuations", async () => {
       mockListTools.mockResolvedValue({
         tools: [createMCPToolWithoutUI("read_me")],
