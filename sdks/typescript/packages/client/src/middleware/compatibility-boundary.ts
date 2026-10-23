@@ -51,6 +51,14 @@ const OPTIONAL_NULLS = {
     "cachedInputTokens",
     "cacheWriteInputTokens",
   ],
+  // The same entries on a failed run: a producer that reported usage before
+  // failing writes them with the same nulls.
+  "RUN_ERROR.usage[]": [
+    "provider",
+    "reasoningTokens",
+    "cachedInputTokens",
+    "cacheWriteInputTokens",
+  ],
   /** Inside a RunAgentInput (here: RUN_STARTED.input). */
   RunAgentInput: ["forwardedProps"],
   Tool: ["parameters"],
@@ -355,6 +363,16 @@ export class CompatibilityBoundary extends Middleware {
           ),
         ) as BaseEvent;
       }
+
+      case EventType.RUN_ERROR:
+        return mapProtocolArray(event, "usage", (entry) =>
+          omitOptionalNulls(
+            entry,
+            OPTIONAL_NULLS["RUN_ERROR.usage[]"],
+            "RUN_ERROR.usage[]",
+            notice,
+          ),
+        ) as BaseEvent;
 
       case EventType.MESSAGES_SNAPSHOT: {
         const record = event as BaseEvent & { messages?: Message[] };

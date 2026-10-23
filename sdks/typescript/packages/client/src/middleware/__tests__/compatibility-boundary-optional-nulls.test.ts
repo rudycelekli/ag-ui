@@ -200,6 +200,41 @@ describe("recorded producer streams through HttpAgent", () => {
     expect(warnings().some((line) => line.includes("RUN_ERROR.usage: null"))).toBe(true);
   });
 
+  // The same producer writes RUN_ERROR.usage as a list when the run had already
+  // reported usage before it failed (a tool loop whose second model call errors),
+  // and each entry carries the same unset-field nulls as a RUN_FINISHED entry.
+  // Only RUN_FINISHED's entries were normalized, so this error failed validation
+  // and the run rejected with a schema error instead of surfacing RUN_ERROR.
+  it("surfaces a RUN_ERROR whose usage entries carry the same nulls as RUN_FINISHED's", async () => {
+    const errors: BaseEvent[] = [];
+    await expect(
+      sseAgent([
+        `{"type":"RUN_ERROR","message":"An error occurred while streaming the agent response.","code":"StreamingError","usage":[{"provider":null,"model":"gpt-4o","inputTokens":39,"outputTokens":19,"totalTokens":58,"reasoningTokens":null,"cachedInputTokens":null,"cacheWriteInputTokens":null}]}`,
+      ]).runAgent(
+        { runId: "r1" },
+        {
+          onRunErrorEvent: ({ event }) => {
+            errors.push(event);
+          },
+        },
+      ),
+    ).resolves.toBeDefined();
+    expect(errors).toEqual([
+      {
+        type: EventType.RUN_ERROR,
+        message: "An error occurred while streaming the agent response.",
+        code: "StreamingError",
+        usage: [{ model: "gpt-4o", inputTokens: 39, outputTokens: 19, totalTokens: 58 }],
+      },
+    ]);
+    expect(convertedNulls()).toEqual([
+      "RUN_ERROR.usage[].provider: null",
+      "RUN_ERROR.usage[].reasoningTokens: null",
+      "RUN_ERROR.usage[].cachedInputTokens: null",
+      "RUN_ERROR.usage[].cacheWriteInputTokens: null",
+    ]);
+  });
+
   it("gives in-process producers and connectAgent the same tolerance", async () => {
     const events = AGENTIC_CHAT.map((line) => JSON.parse(line) as BaseEvent);
     for (const path of ["run", "connect"] as const) {
@@ -236,6 +271,10 @@ describe("the optional-null tolerance is exactly the listed fields", () => {
       events: [start, { ...finish, usage: [{ ...usage, inputTokens: null }] }],
     },
     { field: "code", events: [{ type: EventType.RUN_ERROR, message: "x", code: null }] },
+    {
+      field: "RUN_ERROR usage model",
+      events: [{ type: EventType.RUN_ERROR, message: "x", usage: [{ ...usage, model: null }] }],
+    },
     {
       field: "usage",
       events: [start, { ...finish, usage: null }],

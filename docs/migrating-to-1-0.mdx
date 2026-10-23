@@ -113,8 +113,8 @@ fields. Before validation, the client translates each to an absent field and
 warns once per field per run for `rawEvent` and `subagentRunId` on any event,
 `RUN_STARTED.parentRunId`, `RUN_STARTED.input`, `RUN_FINISHED.result`,
 `RUN_FINISHED.outcome.pendingToolCallIds`, `provider`, `reasoningTokens`,
-`cachedInputTokens` and `cacheWriteInputTokens` in `RUN_FINISHED.usage[]`,
-`RUN_ERROR.usage`, `SUBAGENT_FINISHED.result`, `TOOL_CALL_RESULT.role`,
+`cachedInputTokens` and `cacheWriteInputTokens` in `RUN_FINISHED.usage[]` and
+`RUN_ERROR.usage[]`, `RUN_ERROR.usage`, `SUBAGENT_FINISHED.result`, `TOOL_CALL_RESULT.role`,
 resume-entry `payload`, media-part `metadata` (`image`, `audio`, `video`,
 `document`), tool `parameters`, and `RunAgentInput.forwardedProps`. This applies
 to in-memory runs, reconnects, SSE, and protobuf, including messages and input
