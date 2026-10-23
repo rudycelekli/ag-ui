@@ -64,6 +64,11 @@ def add_agentspec_fastapi_endpoint(
                 # Important: create the task after setting the ContextVar so the new Task inherits it
                 asyncio.create_task(run_and_close())
 
+                # The Trace emits RUN_FINISHED on exit even when the agent
+                # raised, and run_and_close reports that failure as RUN_ERROR
+                # afterwards. Hold RUN_FINISHED until the run is known to
+                # have succeeded, so a failed run ends on RUN_ERROR alone.
+                run_finished = None
                 while True:
                     item = await queue.get()
                     if item is None:
@@ -74,7 +79,16 @@ def add_agentspec_fastapi_endpoint(
                         item.thread_id = input_data.thread_id
                         item.run_id = input_data.run_id
 
+                    if item.type == EventType.RUN_FINISHED:
+                        run_finished = item
+                        continue
+                    if item.type == EventType.RUN_ERROR:
+                        run_finished = None
+
                     yield encoder.encode(item)
+
+                if run_finished is not None:
+                    yield encoder.encode(run_finished)
 
             except Exception as e:  # pylint: disable=broad-exception-caught
                 yield encoder.encode(
